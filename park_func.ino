@@ -1,3 +1,7 @@
+const int Parking_Thresh = 2500; // threshold for in parking level rmps up fairly quick
+const int Parking_Sensor = 16; // analog pin set
+int Parking_val  = 0; //
+int Consecutive_Readings = 0;
 void Park() {
   const int Required_Readings = 5;    
   Parking_val = analogRead(Parking_Sensor);
