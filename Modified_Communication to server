@@ -1,3 +1,6 @@
+
+####Code doesn't show flag emoji but can take any other route####
+
 #include <WiFi.h>
 #include <HTTPClient.h>
 
