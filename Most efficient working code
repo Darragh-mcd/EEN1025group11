@@ -1,0 +1,179 @@
+#####  Most efficient version of dynamic WiFi Communication  #####
+#####  New Routes can be sent and acknowledged #####
+
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+// Wi-Fi credentials
+const char* ssid = "iot";
+const char* password = "defenestrated75fakers";
+
+// Server details
+const char* serverAddress = "3.250.38.184"; // IP address
+const int serverPort = 8000;               // Port
+
+// Route and position variables
+int positions[10];     // Array to store route positions
+int routeLength = 0;   // Number of positions in the route
+int currentPositionIndex = 0; // Start from the first position
+bool routeCompleted = false;  // Flag to check if route is completed
+
+// Timer variables
+unsigned long lastTime = 0;
+unsigned long timerDelay = 5000; // Send updates every 5 seconds
+
+// Function to fetch the route from the server
+String getRouteFromServer(String teamId) {
+  WiFiClient client;
+
+  if (client.connect(serverAddress, serverPort)) {
+    Serial.println("Connected to server for GET request");
+
+    // Construct the GET request
+    String endpoint = "/api/getRoute/" + teamId;
+    client.println("GET " + endpoint + " HTTP/1.1");
+    client.println("Host: " + String(serverAddress));
+    client.println("Connection: close");
+    client.println();
+
+    // Read the response
+    String response = "";
+    while (client.connected() || client.available()) {
+      String line = client.readStringUntil('\n');
+      response += line + "\n";
+    }
+
+    client.stop(); // Close the connection
+
+    Serial.println("Server response:");
+    Serial.println(response);
+
+    // Extract the body (find first empty line)
+    int bodyIndex = response.indexOf("\r\n\r\n");
+    if (bodyIndex != -1) {
+      String route = response.substring(bodyIndex + 4);
+      route.trim();
+      return route; // Return the extracted route
+    } else {
+      Serial.println("Warning: Response format unexpected.");
+      return ""; // Return empty if format is incorrect
+    }
+  } else {
+    Serial.println("Failed to connect to server for GET request");
+  }
+
+  return ""; // Return empty string if request fails
+}
+
+// Function to send a POST request with the current position
+void sendPostRequest(String teamId, int position) {
+  WiFiClient client;
+
+  if (client.connect(serverAddress, serverPort)) {
+    Serial.println("Connected to server for POST request");
+
+    // Construct the POST body
+    String endpoint = "/api/arrived/" + teamId;
+    String postBody = "position=" + String(position);
+
+    // Send the POST request
+    client.println("POST " + endpoint + " HTTP/1.1");
+    client.println("Host: " + String(serverAddress));
+    client.println("Content-Type: application/x-www-form-urlencoded");
+    client.print("Content-Length: ");
+    client.println(postBody.length());
+    client.println("Connection: close");
+    client.println();
+    client.println(postBody);
+
+    // Read the server's response
+    Serial.println("Server response:");
+    while (client.connected() || client.available()) {
+      String line = client.readStringUntil('\n');
+      Serial.println(line);
+    }
+
+    client.stop(); // Close the connection
+  } else {
+    Serial.println("Failed to connect to server for POST request");
+  }
+}
+
+// Setup function
+void setup() {
+  Serial.begin(115200);
+
+  // Connect to Wi-Fi
+  Serial.println("Connecting to Wi-Fi...");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.print(".");
+  }
+  Serial.println("\nConnected to Wi-Fi");
+
+  // Retrieve the route from the server
+  String teamId = "pllk3327"; // Replace with your team ID
+  String route = getRouteFromServer(teamId);
+  if (route.length() > 0) {
+    Serial.println("Route received: " + route);
+
+    // Parse the route into an array
+    int index = 0;
+    while (route.indexOf(',') != -1) {
+      positions[index++] = route.substring(0, route.indexOf(',')).toInt();
+      route = route.substring(route.indexOf(',') + 1);
+    }
+    positions[index++] = route.toInt(); // Add the last position
+    routeLength = index;               // Store the total length of the route
+  } else {
+    Serial.println("Failed to retrieve route from server");
+  }
+}
+
+// Loop function
+void loop() {
+  // Timer-based updates
+  if (!routeCompleted && (millis() - lastTime) > timerDelay) {
+    // Send the current position to the server
+    sendPostRequest("pllk3327", positions[currentPositionIndex]);
+
+    // Check if this is the last position
+    if (currentPositionIndex == routeLength - 1) {
+      Serial.println("Route completed! Showing flag...");
+      routeCompleted = true; // Mark the route as completed
+      // Add code to show the flag here (e.g., LED, Serial, etc.)
+    } else {
+      // Move to the next position
+      currentPositionIndex++;
+    }
+
+    // Update the timer
+    lastTime = millis();
+  }
+
+  // If route is completed, retrieve a new route
+  if (routeCompleted) {
+    Serial.println("Fetching a new route...");
+    String teamId = "pllk3327"; // Replace with your team ID
+    String newRoute = getRouteFromServer(teamId);
+    
+    if (newRoute.length() > 0) {
+      // Reset route variables for the new route
+      routeCompleted = false; // Reset the flag
+      currentPositionIndex = 0; // Start from the first position
+
+      // Parse the new route into the positions array
+      int index = 0;
+      while (newRoute.indexOf(',') != -1) {
+        positions[index++] = newRoute.substring(0, newRoute.indexOf(',')).toInt();
+        newRoute = newRoute.substring(newRoute.indexOf(',') + 1);
+      }
+      positions[index++] = newRoute.toInt(); // Add the last position
+      routeLength = index; // Update the route length
+      Serial.println("New route received!");
+    } else {
+      Serial.println("Failed to retrieve a new route from the server");
+    }
+  }
+}
